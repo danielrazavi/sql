@@ -81,7 +81,11 @@ Remove any trailing or leading whitespaces. Don't just use a case statement for 
 Hint: you might need to use INSTR(product_name,'-') to find the hyphens. INSTR will help split the column. */
 --QUERY 5
 
-SELECT product_name, NULL AS product_description FROM product;
+SELECT product_name,
+       CASE WHEN INSTR(product_name, '-') > 0
+            THEN TRIM(SUBSTR(product_name, INSTR(product_name, '-') + 1))
+            ELSE NULL END AS product_description
+FROM product;
 
 --END QUERY
 
