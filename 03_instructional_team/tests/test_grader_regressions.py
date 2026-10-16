@@ -111,10 +111,27 @@ class GraderRegressionTests(unittest.TestCase):
     def test_malformed_submissions_always_replace_stale_report(self):
         """Broken query markers must produce fresh errors rather than reuse an old report."""
         for text in ('--QUERY 1\nSELECT 1', '--QUERY 1\nSELECT 1\n--END QUERY\n--QUERY 1\nSELECT 1\n--END QUERY',
-                     '--QUERY 99\nSELECT 1\n--END QUERY', '--QUERY nope', '--END QUERY',
+                     '--QUERY 99\nSELECT 1\n--END QUERY', '--END QUERY',
                      '--QUERY 1\n--QUERY 2'):
             with self.subTest(text=text):
                 self.assertTrue(all(r['status'] == 'error' for r in self.run_submission(text=text).values()))
+
+    def test_query_comments_are_not_answer_markers(self):
+        """Only complete marker lines delimit answers; descriptive comments remain ordinary SQL."""
+        comments = ('-- query to count purchases', '-- QUERY results below',
+                    '-- query 1 explains this approach', '-- end query explanation', '--QUERY nope')
+        with tempfile.TemporaryDirectory() as folder:
+            submission = Path(folder) / 'assignment2.sql'
+            sql = '\n'.join((*comments, 'SELECT 1;', *comments))
+            submission.write_text('-- query overview\n--QUERY 1\n' + sql +
+                                  '\n--END QUERY\n-- query closing notes')
+            queries = G['load_queries'](submission)
+            self.assertEqual(queries[0], {'number': 1, 'query': sql})
+            self.assertTrue(all(not item['query'] for item in queries[1:]))
+            results = self.run_submission(text=submission.read_text())
+            self.assertEqual(results[1]['status'], 'incorrect')
+            self.assertTrue(all(item['status'] == 'missing'
+                                for number, item in results.items() if number != 1))
 
     @requires_private_solution
     def test_valid_window_alternatives(self):
@@ -123,12 +140,109 @@ class GraderRegressionTests(unittest.TestCase):
             with self.subTest(question=number):
                 self.assertEqual(self.run_submission({number: self.blocks[index]})[number]['status'], 'correct')
 
+    @requires_private_solution
+    def test_latest_visits_without_displayed_rank(self):
+        """Accept an internal rank while still rejecting wrong dates or missing customers."""
+        for sql in (self.valid[3], self.blocks[5]):
+            inner = sql.strip().rstrip(';')
+            projected = f"SELECT market_date, customer_id FROM ({inner})"
+            with self.subTest(sql=sql):
+                self.assertEqual(self.run_submission({3: projected})[3]['status'], 'correct')
+                wrong_dates = ("SELECT customer_id, date(market_date, '-1 day') AS market_date "
+                               f"FROM ({inner})")
+                self.assertEqual(self.run_submission({3: wrong_dates})[3]['status'], 'incorrect')
+                self.assertEqual(self.run_submission({3: projected + ' LIMIT 1'})[3]['status'],
+                                 'incorrect')
+                wrong_rank = ("SELECT customer_id, market_date, 99 AS visit_number "
+                              f"FROM ({inner})")
+                self.assertEqual(self.run_submission({3: wrong_rank})[3]['status'], 'incorrect')
+        self.assertIsNotNone(G['technique_feedback'](
+            3, 'SELECT customer_id, MAX(market_date) AS market_date '
+               'FROM customer_purchases GROUP BY customer_id'
+        ))
+
+    def test_running_purchase_counts_accept_date_peers(self):
+        """Accept date-only running counts while rejecting wrong counts and missing purchases."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("CREATE TABLE customer_purchases "
+                         "(customer_id, vendor_id, product_id, market_date, transaction_time)")
+            conn.executemany("INSERT INTO customer_purchases VALUES (?, ?, ?, ?, ?)", [
+                (1, 2, 3, '2022-04-01', '09:00'),
+                (1, 2, 3, '2022-04-01', '09:00'),
+                (1, 2, 3, '2022-04-01', '10:00'),
+                (1, 2, 3, '2022-04-02', '09:00'),
+                (1, 2, 4, '2022-04-01', '09:00'),
+                (2, 2, 3, '2022-04-01', '09:00'),
+                (1, 2, 3, '2022-04-29', '09:00'),
+            ])
+            for ordering, expected in (
+                ('market_date', [3, 3, 3, 4, 1, 1]),
+                ('market_date, transaction_time', [2, 2, 3, 4, 1, 1]),
+            ):
+                for details in ('customer_id, product_id, market_date', '*'):
+                    with self.subTest(ordering=ordering, details=details):
+                        rows = G['fetch'](conn, f"""
+                            SELECT {details}, COUNT(*) OVER (
+                                PARTITION BY customer_id, product_id ORDER BY {ordering}
+                            ) AS product_purchase_count
+                            FROM customer_purchases WHERE market_date < '2022-04-29'
+                            ORDER BY rowid
+                        """)
+                        self.assertEqual([row['product_purchase_count'] for row in rows], expected)
+                        self.assertEqual(G['grade_question_4'](rows, conn)[0], 'correct')
+                        self.assertEqual(G['grade_question_4'](rows[:-1], conn)[0], 'incorrect')
+                        rows[0]['product_purchase_count'] = 99
+                        self.assertEqual(G['grade_question_4'](rows, conn)[0], 'incorrect')
+        finally:
+            conn.close()
+
     def test_semicolons_inside_literals_and_comments(self):
         """A semicolon in a product name or comment must not break a valid SQL command."""
         conn = G['clone_database'](self.source)
         try:
             rows = G['run_query'](conn, "CREATE TEMP TABLE sample(value); INSERT INTO sample VALUES ('Pie; special'); -- comment;\n SELECT * FROM sample;; -- trailing;\n;")
             self.assertEqual(rows, [{'value': 'Pie; special'}])
+        finally:
+            conn.close()
+
+    def test_purchase_counts_allow_optional_purchase_details(self):
+        """Accept reduced Q4 output without losing duplicate-row or count validation."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("CREATE TABLE customer_purchases "
+                         "(customer_id, vendor_id, product_id, market_date, transaction_time)")
+            conn.executemany("INSERT INTO customer_purchases VALUES (?, ?, ?, ?, ?)", [
+                (1, 2, 3, '2022-04-01', '09:00'),
+                (1, 2, 3, '2022-04-01', '10:00'),
+            ])
+            rows = [dict(customer_id=1, product_id=3, market_date='2022-04-01', cnt=2)
+                    for _ in range(2)]
+            grade = G['grade_question_4']
+            self.assertEqual(grade(rows, conn)[0], 'correct')
+            count = "COUNT(*) OVER (PARTITION BY customer_id, product_id)"
+            projections = {
+                'reordered columns':
+                    f"{count} AS product_purchase_count, market_date, product_id, customer_id",
+                'optional purchase details':
+                    f"customer_id, product_id, market_date, vendor_id, transaction_time, {count} AS cnt",
+                'alternative count alias':
+                    f"customer_id, product_id, market_date, {count} AS total_purchases",
+            }
+            for case, projection in projections.items():
+                with self.subTest(case=case):
+                    selected = G['fetch'](
+                        conn, f"SELECT {projection} FROM customer_purchases "
+                        "WHERE market_date < '2022-04-29'"
+                    )
+                    self.assertEqual(grade(selected, conn)[0], 'correct')
+            self.assertEqual(grade(rows[:1], conn)[0], 'incorrect')
+            self.assertEqual(grade([dict(row, cnt=99) for row in rows], conn)[0], 'incorrect')
+            self.assertEqual(grade([dict(row, vendor_id=99) for row in rows], conn)[0], 'incorrect')
+            self.assertEqual(grade([dict(row, transaction_time='wrong') for row in rows], conn)[0],
+                             'incorrect')
         finally:
             conn.close()
 
@@ -157,10 +271,52 @@ class GraderRegressionTests(unittest.TestCase):
             self.assertEqual(self.run_submission({7: sql})[7]['status'], 'correct')
 
     @requires_private_solution
+    def test_revenue_alias_and_position_are_accepted(self):
+        """Accept Q8 revenue anywhere while checking its values and vendor/product pairing."""
+        inner = self.valid[8].strip().rstrip(';')
+        for projection in (
+            '"sum(price)" AS gross_income, product_name, vendor_name',
+            'vendor_name, "sum(price)" AS gross_income, product_name, 0 AS extra',
+        ):
+            with self.subTest(projection=projection):
+                sql = f'SELECT {projection} FROM ({inner})'
+                self.assertEqual(self.run_submission({8: sql})[8]['status'], 'correct')
+        for projection in (
+            'vendor_name, product_name, "sum(price)" + 1 AS gross_income, 0 AS extra',
+            "vendor_name, 'wrong product' AS product_name, \"sum(price)\" AS gross_income",
+            'vendor_name, product_name, 0 AS extra',
+        ):
+            with self.subTest(projection=projection):
+                sql = f'SELECT {projection} FROM ({inner})'
+                self.assertEqual(self.run_submission({8: sql})[8]['status'], 'incorrect')
+        sql = f'SELECT vendor_name, product_name, "sum(price)" AS gross_income FROM ({inner}) LIMIT 1'
+        self.assertEqual(self.run_submission({8: sql})[8]['status'], 'incorrect')
+
+    @requires_private_solution
     def test_reordered_snapshot_columns(self):
         """Putting the required product columns in a different order should still pass."""
         sql = self.valid[9].replace('p.*', 'product_name,product_id,product_size,product_category_id,product_qty_type')
         self.assertEqual(self.run_submission({9: sql})[9]['status'], 'correct')
+
+    @requires_private_solution
+    def test_temporary_snapshot_supports_all_mutations(self):
+        """A valid temporary Q9 snapshot must remain usable through Q10-12."""
+        for creation in ('CREATE TEMP TABLE', 'CREATE TEMPORARY TABLE', 'CREATE TABLE temp.'):
+            replacement = creation if creation.endswith('.') else creation + ' '
+            sql, replacements = re.subn(r'\bCREATE\s+TABLE\s+', replacement,
+                                        self.valid[9], count=1, flags=re.I)
+            self.assertEqual(replacements, 1)
+            with self.subTest(creation=creation):
+                results = self.run_submission({9: sql})
+                self.assertEqual([results[n]['status'] for n in range(9, 13)], ['correct'] * 4)
+
+    @requires_private_solution
+    def test_invalid_temporary_snapshot_still_blocks_dependents(self):
+        """TEMP changes table lifetime, not the required snapshot contents."""
+        sql = 'CREATE TEMP TABLE product_units AS SELECT * FROM product'
+        results = self.run_submission({9: sql})
+        self.assertEqual(results[9]['status'], 'incorrect')
+        self.assertEqual([results[n]['status'] for n in range(10, 13)], ['blocked'] * 3)
 
     @requires_private_solution
     def test_invalid_and_stale_timestamps_fail(self):

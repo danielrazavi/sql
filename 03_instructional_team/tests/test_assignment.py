@@ -34,8 +34,6 @@ def load_queries(sql_file):
                 raise ValueError("END QUERY has no matching QUERY marker.")
             queries[number] = "\n".join(buffer).strip()
             number = None
-        elif re.match(r"--\s*(QUERY|END\s+QUERY)\b", stripped, re.I):
-            raise ValueError(f"Invalid answer marker: {stripped}")
         elif number is not None:
             buffer.append(line)
     if number is not None:
@@ -234,9 +232,11 @@ def grade_question_2(rows, reference):
 
 def grade_question_3(rows, reference):
     """Grade the most-recent customer visit answer."""
-    actual = extract_result_rows(
-        rows, (("customer_id",), ("market_date",), ("visit_number",)), True
-    )
+    # The rank can be used to filter a subquery without appearing in its output.
+    keys = ("customer_id", "market_date")
+    if rows and len(rows[0]) > 2:
+        keys += ("visit_number",)
+    actual = extract_result_rows(rows, tuple((key,) for key in keys), True)
     full = fetch(reference, """
         SELECT customer_id, market_date, 1 AS visit_number
         FROM customer_purchases AS p
@@ -247,7 +247,6 @@ def grade_question_3(rows, reference):
         SELECT customer_id, MAX(market_date) AS market_date, 1 AS visit_number
         FROM customer_purchases GROUP BY customer_id
     """)
-    keys = ("customer_id", "market_date", "visit_number")
     accepted = [count_result_rows(result, keys) for result in (full, unique)]
     return grading_outcome(
         actual in accepted,
@@ -258,10 +257,12 @@ def grade_question_3(rows, reference):
 
 def grade_question_4(rows, reference):
     """Grade the customer product-purchase count answer."""
-    columns = (
-        ("customer_id",), ("vendor_id",), ("product_id",),
-        ("market_date",), ("transaction_time",), ("product_purchase_count",),
-    )
+    # Purchase details are optional, but validate them when students include them.
+    returned_names = {key.lower() for key in rows[0]} if rows else set()
+    keys = ["customer_id", "product_id", "market_date"]
+    keys.extend(key for key in ("vendor_id", "transaction_time") if key in returned_names)
+    keys.append("product_purchase_count")
+    columns = tuple((key,) for key in keys)
     actual = extract_result_rows(rows, columns, True)
     fixed = fetch(reference, """
         SELECT customer_id, vendor_id, product_id, market_date, transaction_time,
@@ -275,12 +276,22 @@ def grade_question_4(rows, reference):
                               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS product_purchase_count
         FROM customer_purchases WHERE market_date < '2022-04-29'
     """)
-    keys = tuple(item[0] for item in columns)
-    accepted = [count_result_rows(result, keys) for result in (fixed, running)]
+    # SQLite's default RANGE frame counts tied ordering values together. Both
+    # date-only ordering and date/time ordering are valid running-count answers.
+    tied_running = []
+    for ordering in ("market_date", "market_date, transaction_time"):
+        tied_running.append(fetch(reference, f"""
+            SELECT customer_id, vendor_id, product_id, market_date, transaction_time,
+                   COUNT(*) OVER (PARTITION BY customer_id, product_id
+                                  ORDER BY {ordering}) AS product_purchase_count
+            FROM customer_purchases WHERE market_date < '2022-04-29'
+        """))
+    accepted = [count_result_rows(result, keys) for result in (fixed, running, *tied_running)]
     return grading_outcome(
         actual in accepted,
         "The purchase count is correct for every customer and product.",
-        "The purchase counts or returned rows are incorrect.",
+        "Include customer_id, product_id, market_date, and a purchase count for every purchase row. "
+        "Check the counts and the filter to dates before April 29, 2022; vendor_id and transaction_time are optional.",
     )
 
 
@@ -356,11 +367,6 @@ def grade_question_7(rows, reference):
 
 def grade_question_8(rows, reference):
     """Grade the possible vendor revenue answer."""
-    actual = extract_result_rows(
-        rows,
-        (("vendor_name",), ("product_name",), ("possible_revenue", "sum(price)", "revenue")),
-        True,
-    )
     expected = fetch(reference, """
         SELECT vendor_name, product_name, SUM(price) AS possible_revenue
         FROM (
@@ -370,8 +376,15 @@ def grade_question_8(rows, reference):
         CROSS JOIN (SELECT DISTINCT customer_id FROM customer)
         GROUP BY vendor_name, product_name
     """)
+    expected_rows = count_result_rows(expected, ("vendor_name", "product_name", "possible_revenue"))
+    # Match revenue values per vendor/product, regardless of alias or column order.
+    matches = any(
+        extract_result_rows(rows, (("vendor_name",), ("product_name",), (column,))) == expected_rows
+        for column in (rows[0] if rows else ())
+        if column.lower() not in ("vendor_name", "product_name")
+    )
     return grading_outcome(
-        actual == count_result_rows(expected, ("vendor_name", "product_name", "possible_revenue")),
+        matches,
         "Possible revenue is correct for every vendor and product.",
         "The possible revenue does not match five items per customer.",
     )
@@ -399,8 +412,11 @@ def grade_select(number, rows, reference):
 
 def product_units_state(conn):
     """Return the product_units table structure and data when the table exists."""
+    # Q9-12 share a connection, so a TEMP snapshot is valid throughout those answers.
     exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_units'"
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_units' "
+        "UNION ALL "
+        "SELECT 1 FROM sqlite_temp_master WHERE type='table' AND name='product_units'"
     ).fetchone()
     if not exists:
         return None

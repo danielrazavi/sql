@@ -14,6 +14,7 @@
     * Open a private window in your browser. Copy and paste the link to your pull request into the address bar. Make sure you can see your pull request properly. This helps the technical facilitator and learning support staff review your submission easily.
 
 Checklist:
+- [ ] 🚨🚨🚨 After forking, open the **Actions** tab in your own SQL repository. If prompted, click **I understand my workflows, go ahead and enable them** before opening your assignment pull request. This enables automatic SQL feedback on your pull request.
 - [ ] Create a branch called `assignment-two`.
 - [ ] Ensure that the repository is public.
 - [ ] Review [the PR description guidelines](https://github.com/UofT-DSI/onboarding/blob/main/onboarding_documents/submissions.md#guidelines-for-pull-request-descriptions) and adhere to them.
@@ -72,6 +73,18 @@ Steps to complete this part of the assignment:
 
 
 ### Write SQL
+
+**Column names for automatic feedback (Sections 2 and 3):** Keep the original names of existing database columns in your results, such as `customer_id`, `market_date`, and `product_name`. Use `AS` to name calculated columns as follows:
+
+| SQL question | Calculated column name |
+|--------------|------------------------|
+| Q2 and Q3: visit numbering | `visit_number` |
+| Q4: purchase count | `product_purchase_count` |
+| Q5: extracted description | `description` |
+| Q7: total sales, if included | `sales` |
+| Q8: possible revenue | `possible_revenue` |
+
+For example, name a calculated count with `COUNT(*) OVER (...) AS product_purchase_count`. Q1's combined product description may have any column name. For Q9-12, use the table and column names specified in the questions.
 
 #### COALESCE
 1. Our favourite manager wants a detailed long list of products, but is afraid of tables! We tell them, no problem! We can produce a list with all of the appropriate details. 
