@@ -29,7 +29,7 @@ SELECT customer_id, market_date FROM (
 --QUERY 4
 -- query for question 4: student answer
 SELECT customer_id, product_id, market_date,
-        COUNT(*) OVER (PARTITION BY customer_id, product_id) AS cnt
+        COUNT(*) OVER (PARTITION BY customer_id, product_id ORDER BY market_date) AS cnt
         FROM customer_purchases WHERE market_date < '2022-04-29';
 --END QUERY
 
