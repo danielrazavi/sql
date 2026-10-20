@@ -14,6 +14,7 @@
     * Open a private window in your browser. Copy and paste the link to your pull request into the address bar. Make sure you can see your pull request properly. This helps the technical facilitator and learning support staff review your submission easily.
 
 Checklist:
+- [ ] 🚨🚨🚨 After forking, open the **Actions** tab in your own SQL repository. If prompted, click **I understand my workflows, go ahead and enable them** before opening your assignment pull request. This enables automatic SQL feedback on your pull request.
 - [ ] Create a branch called `assignment-two`.
 - [ ] Ensure that the repository is public.
 - [ ] Review [the PR description guidelines](https://github.com/UofT-DSI/onboarding/blob/main/onboarding_documents/submissions.md#guidelines-for-pull-request-descriptions) and adhere to them.
@@ -69,6 +70,7 @@ Steps to complete this part of the assignment:
 	- from [Github](./02_activities/assignments/assignment2.sql)
 	- or, from your local forked repository  
 - Complete each question, by writing responses between the QUERY # and END QUERY blocks
+- Some questions build on your earlier queries or tables. Keep track of the column names you use so you can reference them correctly in later questions.
 
 
 ### Write SQL
