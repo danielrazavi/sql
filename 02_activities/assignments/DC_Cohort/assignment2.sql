@@ -1,10 +1,13 @@
 --QUERY 1
--- query for question 1: student answer
-SELECT product_name FROM product; -- deliberately incorrect
+-- query 1: arbitrary aliases and reordered output
+SELECT "product_name || ', ' || COALESCE(product_size, '') || ' (' || COALESCE(product_qty_type, 'unit') || ')'" AS "q1_field_0" FROM (SELECT 
+product_name || ', ' || COALESCE(product_size, '') || ' (' || COALESCE(product_qty_type, 'unit') || ')'
+FROM product);
 --END QUERY
 
 --QUERY 2
--- query for question 2: student answer
+-- query 2: arbitrary aliases and reordered output
+SELECT "visit_number" AS "q2_field_2", "market_date" AS "q2_field_1", "customer_id" AS "q2_field_0" FROM (-- query for question 2: student answer
 SELECT customer_id, market_date,
 ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY market_date) AS visit_number
 
@@ -12,39 +15,43 @@ FROM customer_purchases
 WHERE market_date < '2022-04-29'
 
 GROUP BY customer_id, market_date
-ORDER BY customer_id, market_date
+ORDER BY customer_id, market_date);
 --END QUERY
 
 --QUERY 3
--- query for question 3: student answer
+-- query 3: arbitrary aliases and reordered output
+SELECT "market_date" AS "q3_field_1", "customer_id" AS "q3_field_0" FROM (-- query for question 3: student answer
 SELECT customer_id, market_date FROM (
         SELECT DISTINCT customer_id, market_date,
                DENSE_RANK() OVER (
                    PARTITION BY customer_id ORDER BY market_date DESC
                ) AS visit_number
         FROM customer_purchases
-    ) x WHERE visit_number = 1;
+    ) x WHERE visit_number = 1);
 --END QUERY
 
 --QUERY 4
--- query for question 4: student answer
+-- query 4: arbitrary aliases and reordered output
+SELECT "cnt" AS "q4_field_3", "market_date" AS "q4_field_2", "product_id" AS "q4_field_1", "customer_id" AS "q4_field_0" FROM (-- query for question 4: student answer
 SELECT customer_id, product_id, market_date,
         COUNT(*) OVER (PARTITION BY customer_id, product_id ORDER BY market_date) AS cnt
-        FROM customer_purchases WHERE market_date < '2022-04-29';
+        FROM customer_purchases WHERE market_date < '2022-04-29');
 --END QUERY
 
 --QUERY 5
--- query for question 5: student answer
+-- query 5: arbitrary aliases and reordered output
+SELECT "description" AS "q5_field_5", "product_qty_type" AS "q5_field_4", "product_category_id" AS "q5_field_3", "product_size" AS "q5_field_2", "product_name" AS "q5_field_1", "product_id" AS "q5_field_0" FROM (-- query for question 5: student answer
 SELECT *, 
 CASE WHEN INSTR(product_name,'-') > 0
   THEN LTRIM(RTRIM(SUBSTR(product_name,INSTR(product_name,'-')+1)))
   ELSE NULL END AS description
 
-FROM product
+FROM product);
 --END QUERY
 
 --QUERY 6
--- query for question 6: student answer
+-- query 6: arbitrary aliases and reordered output
+SELECT "description" AS "q6_field_5", "product_qty_type" AS "q6_field_4", "product_category_id" AS "q6_field_3", "product_size" AS "q6_field_2", "product_name" AS "q6_field_1", "product_id" AS "q6_field_0" FROM (-- query for question 6: student answer
 SELECT *, 
 CASE WHEN INSTR(product_name,'-') > 0
   THEN LTRIM(RTRIM(SUBSTR(product_name,INSTR(product_name,'-')+1)))
@@ -52,12 +59,13 @@ CASE WHEN INSTR(product_name,'-') > 0
 
 
 FROM product
-WHERE product_size REGEXP( '[0-9]')
+WHERE product_size REGEXP( '[0-9]'));
 --END QUERY
 
 --QUERY 7
--- query for question 7: student answer
-;WITH sales_per_market AS (
+-- query 7: arbitrary aliases and reordered output
+SELECT "sales_rank" AS "q7_field_2", "sales" AS "q7_field_1", "market_date" AS "q7_field_0" FROM (-- query for question 7: student answer
+WITH sales_per_market AS (
 SELECT
 market_date,
 ROUND(SUM(quantity * cost_per_quantity),2) AS sales
@@ -84,11 +92,12 @@ UNION
 
 SELECT market_date, sales, sales_rank_desc AS sales_rank
 FROM market_dates_ranked_by_sales
-WHERE sales_rank_desc = 1
+WHERE sales_rank_desc = 1);
 --END QUERY
 
 --QUERY 8
--- query for question 8: student answer
+-- query 8: arbitrary aliases and reordered output
+SELECT "extra" AS "q8_field_3", "product_name" AS "q8_field_2", "gross_income" AS "q8_field_1", "vendor_name" AS "q8_field_0" FROM (-- query for question 8: student answer
 SELECT vendor_name, "sum(price)" AS gross_income, product_name, 0 AS extra FROM (SELECT vendor_name, product_name, sum(price)
 FROM (
   SELECT DISTINCT
@@ -104,10 +113,11 @@ CROSS JOIN
   (SELECT DISTINCT 
   customer_id
   FROM customer)
-GROUP BY vendor_name, product_name);
+GROUP BY vendor_name, product_name));
 --END QUERY
 
 --QUERY 9
+-- query 9: arbitrary aliases and reordered output
 -- query for question 9: student answer
 CREATE TEMP TABLE product_units AS
 
@@ -118,6 +128,7 @@ CREATE TEMP TABLE product_units AS
 --END QUERY
 
 --QUERY 10
+-- query 10: arbitrary aliases and reordered output
 -- query for question 10: student answer
 INSERT INTO product_units (product_id, product_name,
   product_size, product_category_id, product_qty_type, snapshot_timestamp)
@@ -133,6 +144,7 @@ INSERT INTO product_units (product_id, product_name,
 --END QUERY
 
 --QUERY 11
+-- query 11: arbitrary aliases and reordered output
 -- query for question 11: student answer
 WITH older_record AS
 (SELECT product_id
@@ -152,6 +164,7 @@ AND snapshot_timestamp =
 --END QUERY
 
 --QUERY 12
+-- query 12: arbitrary aliases and reordered output
 -- query for question 12: student answer
 ALTER TABLE product_units
 ADD current_quantity INT;
