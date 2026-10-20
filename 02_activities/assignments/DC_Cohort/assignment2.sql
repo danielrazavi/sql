@@ -7,7 +7,10 @@ FROM product);
 
 --QUERY 2
 -- query 2: arbitrary aliases and reordered output
-SELECT "visit_number" AS "q2_field_2", "market_date" AS "q2_field_1", "customer_id" AS "q2_field_0" FROM (-- query for question 2: student answer
+SELECT "q2_field_2",
+        COALESCE(LEAD("q2_field_1") OVER (ORDER BY "q2_field_0", "q2_field_1"),
+                 FIRST_VALUE("q2_field_1") OVER (ORDER BY "q2_field_0", "q2_field_1")) AS "q2_field_1",
+        "q2_field_0" FROM (SELECT "visit_number" AS "q2_field_2", "market_date" AS "q2_field_1", "customer_id" AS "q2_field_0" FROM (-- query for question 2: student answer
 SELECT customer_id, market_date,
 ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY market_date) AS visit_number
 
@@ -15,7 +18,7 @@ FROM customer_purchases
 WHERE market_date < '2022-04-29'
 
 GROUP BY customer_id, market_date
-ORDER BY customer_id, market_date);
+ORDER BY customer_id, market_date));
 --END QUERY
 
 --QUERY 3
